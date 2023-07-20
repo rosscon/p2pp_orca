@@ -11,7 +11,7 @@ import sys
 if sys.platform == "darwin":
     from setuptools import setup
 
-    APP = ['P2PP.py']
+    APP = ['P2PP_ORCA.py']
     DATA_FILES = ['p2pp.ui', 'p2ppconf.ui', "SendError.ui", "p3browser.ui"]
     OPTIONS = {'argv_emulation': True,
                "iconfile": "icons/icon.icns",
@@ -41,7 +41,7 @@ if sys.platform == "linux":
 
     setup(name="p2pp",
           version=version.Version,
-          description="P2PP - Palette 2 Post Processing tool for Prusa Slicer",
+          description="P2PP - Palette 2 Post Processing tool for Orca Slicer",
           options={"build_exe": build_exe_options},
           executables=[Executable("P2PP.py", base=None, icon="icons/icon.ico")]
           )
@@ -60,7 +60,7 @@ if sys.platform == "win32":
 
     setup(name="p2pp",
           version=version.Version,
-          description="P2PP - Palette 2 Post Processing tool for Prusa Slicer",
+          description="P2PP - Palette 2 Post Processing tool for Orca Slicer",
           options={"build_exe": build_exe_options},
           executables=[Executable("p2pp.py", base="Win32GUI", icon="icons/icon.ico")]
           )

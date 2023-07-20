@@ -8,4 +8,4 @@ modulegraph~=0.18
 py2app~=0.19
 macholib~=1.14
 altgraph~=0.17
-Pillow~=7.0.0
+Pillow

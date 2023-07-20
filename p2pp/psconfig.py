@@ -337,7 +337,7 @@ def parse_config_parameters():
                         v.used_filament_types = list(dict.fromkeys(v.used_filament_types))
             continue
 
-        if gcode_line.startswith("; start_gcode "):
+        if gcode_line.startswith("; machine_start_gcode "):
             parameter_start = gcode_line.find("=")
             gcode_value = gcode_line[parameter_start + 2:].strip()
             lines = gcode_value.split("\\n")

@@ -262,15 +262,16 @@ def update_class(line_hash):
     elif line_hash == hash_EMPTY_GRID_END:
         v.block_classification = CLS_ENDGRID
 
-    elif line_hash == hash_TOOLCHANGE_START:
-        v.block_classification = CLS_TOOL_START
-        v.layer_toolchange_counter += 1
+    # Orca Slicer only utilises a prime tower
+    #elif line_hash == hash_TOOLCHANGE_START:
+    #    v.block_classification = CLS_TOOL_START
+    #    v.layer_toolchange_counter += 1
 
-    elif line_hash == hash_TOOLCHANGE_UNLOAD:
-        v.block_classification = CLS_TOOL_UNLOAD
+    #elif line_hash == hash_TOOLCHANGE_UNLOAD:
+    #    v.block_classification = CLS_TOOL_UNLOAD
 
-    elif line_hash == hash_TOOLCHANGE_LOAD:
-        v.block_classification = CLS_TOOL_UNLOAD
+    #elif line_hash == hash_TOOLCHANGE_LOAD:
+    #    v.block_classification = CLS_TOOL_UNLOAD
 
     elif line_hash == hash_TOOLCHANGE_WIPE:
         v.block_classification = CLS_TOOL_PURGE
@@ -382,7 +383,7 @@ def parse_gcode_first_pass():
 
         if v.block_classification != v.previous_block_classification:
 
-            if v.block_classification in [CLS_TOOL_START, CLS_TOOL_UNLOAD, CLS_EMPTY, CLS_BRIM]:
+            if v.block_classification in [CLS_TOOL_START, CLS_EMPTY, CLS_BRIM]:
                 for idx in range(backpass_line, len(v.parsed_gcode)):
                     v.parsed_gcode[idx][gcode.CLASS] = v.block_classification
 
@@ -441,6 +442,8 @@ def parse_gcode_second_pass():
     v.total_material_extruded = v.firmwarepurge
     v.material_extruded_per_color[v.current_tool] = v.firmwarepurge
 
+    tool_temp_mapping = {}
+
     for process_line_count in range(total_line_count):
 
         try:
@@ -458,6 +461,12 @@ def parse_gcode_second_pass():
 
         g = v.parsed_gcode[idx]
 
+        # ----- PARSE TOOL SPECIFIC TEMPERATURE SETTINGS
+        if "M104" in g:
+            if ' T' in g[6]:
+                tool_temp_mapping[ g[6].strip() ] = g[5]
+                gcode.move_to_comment(g, "--P2PP ORCA-- Remove tool defined temperature")
+
         idx = idx + 1
 
         # ----- MEMORY MANAGEMENT - when 100K lines are processed, remove the top of the list
@@ -473,8 +482,7 @@ def parse_gcode_second_pass():
 
         # ---- FIRST SECTION HANDLES DELAYED TEMPERATURE COMMANDS ----
 
-        if current_block_class not in [CLS_TOOL_PURGE, CLS_TOOL_START,
-                                       CLS_TOOL_UNLOAD] and v.current_temp != v.new_temp:
+        if current_block_class not in [CLS_TOOL_PURGE, CLS_TOOL_START] and v.current_temp != v.new_temp:
             gcode.issue_code(v.temp1_stored_command)
             v.temp1_stored_command = ""
 
@@ -509,6 +517,9 @@ def parse_gcode_second_pass():
 
             if g[gcode.COMMAND].startswith('T'):
 
+                if tool_temp_mapping != {}:
+                    gcode.issue_code("M104 S" + str(tool_temp_mapping[g[7]]) + "; --P2PP ORCA-- Insert tool change temperature")
+
                 if v.manual_filament_swap and not (v.side_wipe or v.full_purge_reduction or v.tower_delta) and (
                         v.current_tool != -1):
                     swap.swap_pause("M25")
@@ -520,7 +531,8 @@ def parse_gcode_second_pass():
                     gui.log_warning("Command {} cound not be processed".format(g[gcode.COMMAND]))
 
                 if not v.debug_leaveToolCommands:
-                    gcode.move_to_comment(g, "--P2PP-- Color Change")
+                    gcode.move_to_comment(g, "--P2PP ORCA-- Color Change")
+                    
 
                 v.toolchange_processed = (current_block_class != CLS_NORMAL)
 
@@ -542,14 +554,14 @@ def parse_gcode_second_pass():
                         gcode_process_toolchange(extruder_num)
 
                     if not v.debug_leaveToolCommands:
-                        gcode.move_to_comment(g, "--P2PP-- Color Change")
+                        gcode.move_to_comment(g, "--P2PP ORCA-- Color Change")
                         v.toolchange_processed = True
                 else:
                     gui.log_warning("KLIPPER - Named extruders are not supported ({})".format(extruder))
             else:
                 if current_block_class == CLS_TOOL_UNLOAD:
                     if g[gcode.COMMAND] in ["G4", "M900", "M400"]:
-                        gcode.move_to_comment(g, "--P2PP-- tool unload")
+                        gcode.move_to_comment(g, "--P2PP ORCA-- tool unload")
 
                 if g[gcode.COMMAND] is not None and g[gcode.COMMAND].startswith('M'):
                     try:
@@ -559,8 +571,7 @@ def parse_gcode_second_pass():
 
                     if command_num in [104, 109]:
                         if v.process_temp:
-                            if current_block_class not in [CLS_TOOL_PURGE, CLS_TOOL_START,
-                                                           CLS_TOOL_UNLOAD]:
+                            if current_block_class not in [CLS_TOOL_PURGE, CLS_TOOL_START]:
                                 g[gcode.COMMENT] += " Unprocessed temp "
                                 v.new_temp = gcode.get_parameter(g, gcode.S, v.current_temp)
                                 v.current_temp = v.new_temp
@@ -570,7 +581,7 @@ def parse_gcode_second_pass():
                                     g[gcode.COMMAND] = "M109"
                                     v.temp2_stored_command = gcode.create_commandstring(g)
                                     gcode.move_to_comment(g,
-                                                          "--P2PP-- delayed temp rise until after purge {}-->{}".format(
+                                                          "--P2PP ORCA-- delayed temp rise until after purge {}-->{}".format(
                                                               v.current_temp,
                                                               v.new_temp))
                                     v.current_temp = v.new_temp
@@ -578,7 +589,7 @@ def parse_gcode_second_pass():
                                 else:
                                     v.temp1_stored_command = gcode.create_commandstring(g)
                                     gcode.move_to_comment(g,
-                                                          "--P2PP-- delayed temp drop until after purge {}-->{}".format(
+                                                          "--P2PP ORCA-- delayed temp drop until after purge {}-->{}".format(
                                                               v.current_temp,
                                                               v.new_temp))
                     elif command_num == 107:
@@ -592,14 +603,14 @@ def parse_gcode_second_pass():
                             gcode.get_parameter(g, gcode.S, v.extrusion_multiplier * 100.0)) / 100.0
 
                     elif command_num == 220:
-                        gcode.move_to_comment(g, "--P2PP-- Feed Rate Adjustments are removed")
+                        gcode.move_to_comment(g, "--P2PP ORCA-- Feed Rate Adjustments are removed")
 
                     elif command_num == 572:
                         for i in range(1, v.filament_count):
                             g[gcode.OTHER] = g[gcode.OTHER].replace("D{}".format(i), "D0")
 
                     elif not v.generate_M0 and g[gcode.COMMAND] == "M0":
-                        gcode.move_to_comment(g, "--P2PP-- remove M0 command")
+                        gcode.move_to_comment(g, "--P2PP ORCA-- remove M0 command")
 
             gcode.issue_command(g)
             continue
@@ -637,7 +648,7 @@ def parse_gcode_second_pass():
             if not (v.side_wipe or v.full_purge_reduction):
                 v.restore_move_point = True
             # BLOCK END
-            gcode.move_to_comment(g, "--P2PP-- tool unload")
+            gcode.move_to_comment(g, "--P2PP ORCA-- tool unload")
             gcode.issue_command(g)
             continue
 
@@ -677,7 +688,7 @@ def parse_gcode_second_pass():
                     g[gcode.COMMENT] += " prugespeed topped"
 
             if v.towerskipped:
-                gcode.move_to_comment(g, "--P2PP-- tower skipped")
+                gcode.move_to_comment(g, "--P2PP ORCA-- tower skipped")
                 gcode.issue_command(g)
                 continue
         # --------------------- SIDE WIPE PROCESSING
@@ -710,7 +721,7 @@ def parse_gcode_second_pass():
                         v.side_wipe_length += g[gcode.E]
                         inc = "INC_E"
 
-                gcode.move_to_comment(g, "--P2PP-- side wipe skipped ({})".format(inc))
+                gcode.move_to_comment(g, "--P2PP ORCA-- side wipe skipped ({})".format(inc))
                 gcode.issue_command(g)
                 continue
 
@@ -740,7 +751,7 @@ def parse_gcode_second_pass():
                 v.towerskipped = (g[gcode.MOVEMENT] & gcode.INTOWER) == gcode.INTOWER
 
             if v.towerskipped or current_block_class in [CLS_BRIM, CLS_ENDGRID]:
-                gcode.move_to_comment(g, "--P2PP-- full purge skipped [Excluded]")
+                gcode.move_to_comment(g, "--P2PP ORCA-- full purge skipped [Excluded]")
                 gcode.issue_command(g)
                 continue
 
@@ -748,9 +759,9 @@ def parse_gcode_second_pass():
 
                 if purge and g[gcode.EXTRUDE]:
                     v.side_wipe_length += g[gcode.E]
-                    gcode.move_to_comment(g, "--P2PP-- full purge skipped [Included]")
+                    gcode.move_to_comment(g, "--P2PP ORCA-- full purge skipped [Included]")
                 else:
-                    gcode.move_to_comment(g, "--P2PP-- full purge skipped [Excluded]")
+                    gcode.move_to_comment(g, "--P2PP ORCA-- full purge skipped [Excluded]")
                 gcode.issue_command(g)
                 continue
 
@@ -762,7 +773,7 @@ def parse_gcode_second_pass():
 
                     # do not issue code here as the next code might require further processing such as retractioncorrection
                 else:
-                    gcode.move_to_comment(g, "--P2PP-- full purge skipped")
+                    gcode.move_to_comment(g, "--P2PP ORCA-- full purge skipped")
                     gcode.issue_command(g)
                     continue
 
@@ -783,12 +794,12 @@ def parse_gcode_second_pass():
                 v.retract_move = False
 
                 if v.retraction <= - v.retract_length[v.current_tool]:
-                    gcode.move_to_comment(g, "--P2PP-- Double Retract")
+                    gcode.move_to_comment(g, "--P2PP ORCA-- Double Retract")
                 else:
                     v.retraction += g[gcode.E]
 
             if intower:
-                gcode.move_to_comment(g, "--P2PP-- full purge skipped [Excluded]")
+                gcode.move_to_comment(g, "--P2PP ORCA-- full purge skipped [Excluded]")
                 gcode.issue_command(g)
                 continue
 
@@ -1078,13 +1089,13 @@ def p2pp_process_file(input_file, output_file):
         for line in header:
             opf.write(line.encode('utf8'))
         opf.write(
-            ("\n\n;--------- THIS CODE HAS BEEN PROCESSED BY P2PP v{} --- \n\n".format(version.Version)).encode('utf8'))
+            ("\n\n;--------- THIS CODE HAS BEEN PROCESSED BY P2PP ORCA v{} --- \n\n".format(version.Version)).encode('utf8'))
         if v.generate_M0:
             header.append("M0\n")
         opf.write("T0\n".encode('utf8'))
     else:
         opf.write(
-            ("\n\n;--------- THIS CODE HAS BEEN PROCESSED BY P2PP v{} --- \n\n".format(version.Version)).encode('utf8'))
+            ("\n\n;--------- THIS CODE HAS BEEN PROCESSED BY P2PP ORCA v{} --- \n\n".format(version.Version)).encode('utf8'))
 
     if v.splice_offset == 0:
         gui.log_warning("SPLICE_OFFSET not defined")
